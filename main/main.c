@@ -39,7 +39,7 @@
 #include "esp_wifi.h"
 #include "esp_now.h"
 #include "esp_log.h"
-#include "driver/gpio.h"   // ab ESP-IDF v6: Komponente esp_driver_gpio
+#include "gpio.h"          // ab ESP-IDF v6: gpio.h aus Komponente esp_hal_gpio
 
 // ── ANPASSEN: MAC-Adressen beider Geräte eintragen ──────────
 // Beispiel: {0x24, 0x6F, 0x28, 0xAA, 0xBB, 0x01}
