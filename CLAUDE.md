@@ -15,14 +15,15 @@ ESP32-Projekt zur drahtlosen Kommunikation via **ESP-NOW** – ein direktes Peer
 
 ## Befehle
 
-Alle Befehle im `Duplex/` Verzeichnis ausführen (dort liegt das ESP-IDF Projekt):
+Alle Befehle im Root-Verzeichnis des Repos ausführen (dort liegt `CMakeLists.txt`):
 
 ```bash
 idf.py build                    # Projekt bauen
 idf.py flash                    # Auf ESP32 flashen
 idf.py monitor                  # Seriellen Monitor öffnen
 idf.py flash monitor            # Flashen und Monitor in einem Schritt
-idf.py -p /dev/ttyUSB0 flash monitor  # Mit explizitem Port
+idf.py -p COM3 flash monitor    # Mit explizitem Port (Windows)
+idf.py -p /dev/ttyUSB0 flash monitor  # Mit explizitem Port (Linux)
 ```
 
 VS Code Shortcuts (ESP-IDF Extension):
@@ -33,12 +34,11 @@ VS Code Shortcuts (ESP-IDF Extension):
 ## Architektur
 
 ```
+CMakeLists.txt            →  ESP-IDF Projekt-Root (VS Code öffnet diesen Ordner)
+main/main.c               →  Hauptcode: Button + LED auf jedem Gerät (Duplex)
+main/CMakeLists.txt       →  Komponenten-Definition (Abhängigkeiten: esp_now, esp_wifi, nvs_flash, driver)
 Sender/Sender.ino         →  Simplex: Button-Druck → sendet (Arduino, nur Sender-Rolle)
 Empfaenger/Empfaenger.ino →  Simplex: empfängt → LED leuchtet (Arduino, nur Empfänger-Rolle)
-Duplex/                   →  ESP-IDF Projekt: gleicher Code für BEIDE Geräte
-  main/main.c             →  Hauptcode: Button + LED auf jedem Gerät
-  main/CMakeLists.txt     →  Komponenten-Definition (Abhängigkeiten: esp_now, esp_wifi, nvs_flash, driver)
-  CMakeLists.txt          →  Projekt-Root
 ```
 
 **Duplex-Ansatz:** Beide MAC-Adressen sind im Code definiert. Jedes Gerät liest beim Start seine eigene MAC (`esp_wifi_get_mac()`), vergleicht sie mit den eingetragenen Adressen und registriert automatisch das jeweils andere Gerät als Peer. So läuft ein einziger Code auf beiden Geräten.
