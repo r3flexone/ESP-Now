@@ -15,14 +15,17 @@ Arduino-Sketches für ESP32 zur drahtlosen Kommunikation via **ESP-NOW** – ein
 
 ## Architektur
 
-Zwei eigenständige Sketches, die zusammenarbeiten:
+Drei Sketches – simplex als Lernbeispiel, duplex für den praktischen Einsatz:
 
 ```
-Sender/Sender.ino         →  Button-Druck → sendet Nachricht per ESP-NOW
-Empfaenger/Empfaenger.ino →  empfängt Nachricht → LED leuchtet auf
+Sender/Sender.ino         →  Simplex: Button-Druck → sendet (nur Sender-Rolle)
+Empfaenger/Empfaenger.ino →  Simplex: empfängt → LED leuchtet (nur Empfänger-Rolle)
+Duplex/Duplex.ino         →  Gleicher Code für BEIDE Geräte: Button + LED auf jedem
 ```
 
-**Gemeinsame Datenstruktur** (`typedef struct Nachricht`): Beide Dateien definieren dieselbe Struct. Wenn die Struct geändert wird, muss sie in **beiden** Dateien identisch angepasst werden – sonst werden die Bytes falsch interpretiert.
+**Duplex-Ansatz:** Beide MAC-Adressen sind im Code definiert. Jedes Gerät liest beim Start seine eigene MAC (`WiFi.macAddress()`), vergleicht sie mit den eingetragenen Adressen und registriert automatisch das jeweils andere Gerät als Peer. So läuft ein einziger Sketch auf beiden Geräten.
+
+**Gemeinsame Datenstruktur** (`typedef struct Nachricht`): Alle Sketches, die miteinander kommunizieren, müssen dieselbe Struct verwenden. Wenn die Struct geändert wird, muss die Änderung in allen beteiligten Dateien identisch übernommen werden.
 
 **Callback-Muster:** ESP-NOW arbeitet ereignisgesteuert. Statt Polling in `loop()` registriert man Callbacks, die das Framework automatisch aufruft:
 - Sender: `esp_now_register_send_cb()` → wird nach dem Senden aufgerufen
