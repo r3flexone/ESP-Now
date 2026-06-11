@@ -63,7 +63,7 @@ static uint8_t *ziel_adresse = NULL;
 
 
 // ── Callback: aufgerufen NACHDEM wir gesendet haben ─────────
-static void send_callback(const uint8_t *mac, esp_now_send_status_t status)
+static void send_callback(const esp_now_send_info_t *tx_info, esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_SUCCESS) {
         ESP_LOGI(TAG, "Nachricht angekommen");
@@ -149,7 +149,7 @@ void app_main(void)
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, ziel_adresse, 6);
     peer.channel = 0;
-    peer.ifidx   = ESP_IF_WIFI_STA;
+    peer.ifidx   = WIFI_IF_STA;
     peer.encrypt = false;
     ESP_ERROR_CHECK(esp_now_add_peer(&peer));
 
