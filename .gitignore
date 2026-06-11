@@ -1,0 +1,9 @@
+# ESP-IDF Build-Artefakte – werden bei jedem Build neu erzeugt
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# VS Code Benutzereinstellungen
+.vscode/
