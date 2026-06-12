@@ -1,25 +1,26 @@
 /*
  * ============================================================
- *  ESP-NOW  –  DUPLEX  (gleicher Code für BEIDE Geräte)
+ *  ESP-NOW  –  N GERÄTE  (gleicher Code für ALLE Geräte)
  *  ESP-IDF Projekt – VS Code + ESP-IDF Extension
  * ============================================================
  *
  *  Jedes Gerät hat einen Button UND eine LED.
- *  Button drücken → sendet an das andere Gerät → dort leuchtet die LED.
- *  Funktioniert in beide Richtungen gleichzeitig.
+ *  Button drücken → sendet an ALLE anderen Geräte → dort schaltet
+ *  die LED um (an/aus). Funktioniert mit 2, 3 oder mehr Geräten -
+ *  derselbe Code läuft auf jedem davon.
  *
- *  Verkabelung (beide Geräte identisch):
+ *  Verkabelung (alle Geräte identisch):
  *  --------------------------------------
  *   Button  →  GPIO 0   (BOOT-Button, LOW wenn gedrückt)
  *   LED     →  GPIO 48  (onboard NeoPixel/WS2812, ESP32-S3-DevKitC-1)
  *
  *  Setup-Reihenfolge:
  *  ------------------
- *   1. Code auf GERÄT 1 flashen  →  Seriellen Monitor öffnen
- *      →  MAC-Adresse notieren (z.B. 24:6F:28:AA:BB:01)
- *   2. Code auf GERÄT 2 flashen  →  MAC-Adresse notieren
- *   3. Beide Adressen unten bei mac_geraet1 / mac_geraet2 eintragen.
- *   4. Code nochmal auf BEIDE Geräte flashen – fertig!
+ *   1. Jedes Gerät einmal flashen und im seriellen Monitor die Zeile
+ *      "Meine MAC: AA:BB:CC:DD:EE:FF" ablesen.
+ *   2. MAC-Adressen aller Geräte von Hand in main/mac_config.h
+ *      eintragen (Vorlage: main/mac_config.h.example).
+ *   3. Alle Geräte neu flashen. Fertig!
  *
  *  VS Code Befehle (ESP-IDF Extension):
  *  -------------------------------------
@@ -42,16 +43,7 @@
 #include "esp_log.h"
 #include "driver/gpio.h"   // Komponente esp_driver_gpio (in IDF v6 umbenannt)
 #include "led_strip.h"     // NeoPixel (WS2812) ueber RMT-Treiber
-
-// ── ANPASSEN: MAC-Adressen beider Geräte eintragen ──────────
-// Einfach in der Schreibweise aus dem seriellen Monitor eintragen
-// Beispiel: "24:6F:28:AA:BB:01"
-static const char *mac_geraet1_str = "A0:F2:62:E2:D0:7C";  // eingetragen
-static const char *mac_geraet2_str = "E0:72:A1:DB:44:68";  // noch eintragen!
-// ────────────────────────────────────────────────────────────
-
-static uint8_t mac_geraet1[6];
-static uint8_t mac_geraet2[6];
+#include "mac_config.h"    // von Hand gepflegt (siehe mac_config.h.example)
 
 #define BUTTON_PIN  GPIO_NUM_0
 #define LED_PIN     GPIO_NUM_48   // onboard NeoPixel (WS2812)
@@ -59,13 +51,17 @@ static uint8_t mac_geraet2[6];
 // Tag für Lognachrichten – erscheint im Monitor als "[ESP-NOW] ..."
 static const char *TAG = "ESP-NOW";
 
-// Nachrichtenstruktur – muss auf beiden Geräten identisch sein
+// Nachrichtenstruktur – muss auf allen Geräten identisch sein
 typedef struct {
     bool led_an;
 } nachricht_t;
 
-// Wird in app_main gesetzt nachdem bekannt ist welches Gerät wir sind
-static uint8_t *ziel_adresse = NULL;
+// MAC-Adressen aller Geräte (aus mac_config.h) als Byte-Arrays
+#define MAC_ARRAY_GROESSE (MAC_ANZAHL > 0 ? MAC_ANZAHL : 1)
+static uint8_t mac_adressen[MAC_ARRAY_GROESSE][6];
+
+// Index dieses Geräts in mac_adressen – -1 = noch nicht bekannt
+static int eigener_index = -1;
 
 // Aktueller LED-Zustand – wird bei jedem Empfang umgeschaltet
 static bool led_status = false;
@@ -158,9 +154,10 @@ void app_main(void)
 {
     wifi_init();
 
-    // MAC-Adressen aus den String-Konstanten oben in Byte-Arrays umwandeln
-    parse_mac(mac_geraet1_str, mac_geraet1);
-    parse_mac(mac_geraet2_str, mac_geraet2);
+    // MAC-Adressen aus mac_config.h in Byte-Arrays umwandeln
+    for (int i = 0; i < MAC_ANZAHL; i++) {
+        parse_mac(mac_liste[i], mac_adressen[i]);
+    }
 
     // Eigene MAC-Adresse lesen und anzeigen
     uint8_t eigene_mac[6];
@@ -169,32 +166,38 @@ void app_main(void)
              eigene_mac[0], eigene_mac[1], eigene_mac[2],
              eigene_mac[3], eigene_mac[4], eigene_mac[5]);
 
-    // Anhand der eigenen MAC herausfinden wer das andere Gerät ist
-    if (memcmp(eigene_mac, mac_geraet1, 6) == 0) {
-        ziel_adresse = mac_geraet2;
-        ESP_LOGI(TAG, "Ich bin Geraet 1 -> sende an Geraet 2");
-    } else if (memcmp(eigene_mac, mac_geraet2, 6) == 0) {
-        ziel_adresse = mac_geraet1;
-        ESP_LOGI(TAG, "Ich bin Geraet 2 -> sende an Geraet 1");
-    } else {
-        // Keiner der eingetragenen MACs passt
-        ESP_LOGE(TAG, "MAC stimmt mit keiner eingetragenen Adresse ueberein!");
-        ESP_LOGE(TAG, "Bitte mac_geraet1 und mac_geraet2 in main.c anpassen.");
+    // Eigenen Platz in der Geräteliste finden
+    for (int i = 0; i < MAC_ANZAHL; i++) {
+        if (memcmp(eigene_mac, mac_adressen[i], 6) == 0) {
+            eigener_index = i;
+            break;
+        }
+    }
+
+    if (eigener_index < 0) {
+        ESP_LOGE(TAG, "MAC stimmt mit keinem Eintrag in mac_config.h ueberein!");
+        ESP_LOGE(TAG, "Bitte die eigene MAC-Adresse (siehe oben) in main/mac_config.h eintragen.");
         return;
     }
+    ESP_LOGI(TAG, "Ich bin Geraet %d von %d", eigener_index + 1, MAC_ANZAHL);
 
     // ESP-NOW starten
     ESP_ERROR_CHECK(esp_now_init());
     esp_now_register_send_cb(send_callback);
     esp_now_register_recv_cb(recv_callback);
 
-    // Das andere Gerät als Kommunikationspartner registrieren
-    esp_now_peer_info_t peer = {};
-    memcpy(peer.peer_addr, ziel_adresse, 6);
-    peer.channel = 0;
-    peer.ifidx   = WIFI_IF_STA;
-    peer.encrypt = false;
-    ESP_ERROR_CHECK(esp_now_add_peer(&peer));
+    // Alle anderen Geräte als Kommunikationspartner registrieren
+    for (int i = 0; i < MAC_ANZAHL; i++) {
+        if (i == eigener_index) {
+            continue;
+        }
+        esp_now_peer_info_t peer = {};
+        memcpy(peer.peer_addr, mac_adressen[i], 6);
+        peer.channel = 0;
+        peer.ifidx   = WIFI_IF_STA;
+        peer.encrypt = false;
+        ESP_ERROR_CHECK(esp_now_add_peer(&peer));
+    }
 
     // NeoPixel (WS2812) ueber RMT-Treiber initialisieren
     led_strip_config_t strip_config = {
@@ -231,8 +234,15 @@ void app_main(void)
         // Pull-up: 0 = gedrückt, 1 = nicht gedrückt
         if (gpio_get_level(BUTTON_PIN) == 0) {
             nachricht_t msg = { .led_an = true };
-            esp_now_send(ziel_adresse, (uint8_t *)&msg, sizeof(msg));
-            ESP_LOGI(TAG, "Gesendet!");
+
+            // An alle anderen Geräte senden
+            for (int i = 0; i < MAC_ANZAHL; i++) {
+                if (i == eigener_index) {
+                    continue;
+                }
+                esp_now_send(mac_adressen[i], (uint8_t *)&msg, sizeof(msg));
+            }
+            ESP_LOGI(TAG, "Gesendet an %d Geraet(e)!", MAC_ANZAHL - 1);
 
             // Eigene LED kurz blinken als Bestätigung, danach zurück zum aktuellen Zustand
             led_set(true);

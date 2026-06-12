@@ -35,13 +35,17 @@ VS Code Shortcuts (ESP-IDF Extension):
 
 ```
 CMakeLists.txt            →  ESP-IDF Projekt-Root (VS Code öffnet diesen Ordner)
-main/main.c               →  Hauptcode: Button + LED auf jedem Gerät (Duplex)
-main/CMakeLists.txt       →  Komponenten-Definition (Abhängigkeiten: esp_now, esp_wifi, nvs_flash, driver)
+main/main.c               →  Hauptcode: Button + LED auf jedem Gerät (N Geräte, gleicher Code)
+main/CMakeLists.txt       →  Komponenten-Definition
+main/mac_config.h         →  NICHT IM GIT – MAC-Liste aller Geräte, von Hand gepflegt
+main/mac_config.h.example →  Vorlage/Format-Beispiel für mac_config.h
 Sender/Sender.ino         →  Simplex: Button-Druck → sendet (Arduino, nur Sender-Rolle)
 Empfaenger/Empfaenger.ino →  Simplex: empfängt → LED leuchtet (Arduino, nur Empfänger-Rolle)
 ```
 
-**Duplex-Ansatz:** Beide MAC-Adressen sind im Code definiert. Jedes Gerät liest beim Start seine eigene MAC (`esp_wifi_get_mac()`), vergleicht sie mit den eingetragenen Adressen und registriert automatisch das jeweils andere Gerät als Peer. So läuft ein einziger Code auf beiden Geräten.
+**N-Geräte-Ansatz:** Die MAC-Adressen aller Geräte stehen als Array `mac_liste[]` in `main/mac_config.h` (von Hand gepflegt, siehe `mac_config.h.example`). Jedes Gerät liest beim Start seine eigene MAC (`esp_wifi_get_mac()`), findet seinen eigenen Index in `mac_liste[]` und registriert alle ANDEREN Geräte als ESP-NOW-Peers. Button-Druck sendet per Unicast an jedes andere Gerät einzeln. So läuft ein einziger Code auf allen Geräten (2, 3, ... N).
+
+**Setup neuer/zusätzlicher Geräte:** Gerät flashen, im seriellen Monitor die eigene MAC-Adresse ablesen ("Meine MAC: ..."), dann in `main/mac_config.h` zur Liste `mac_liste[]` hinzufügen und `MAC_ANZAHL` anpassen. Danach alle Geräte neu flashen.
 
 **Gemeinsame Datenstruktur** (`typedef struct nachricht_t`): Alle Programme, die miteinander kommunizieren, müssen dieselbe Struct verwenden. Änderungen müssen in allen beteiligten Dateien identisch übernommen werden.
 
@@ -51,8 +55,8 @@ Empfaenger/Empfaenger.ino →  Simplex: empfängt → LED leuchtet (Arduino, nur
 
 ## Wichtige Konventionen
 
-- **GPIO-Pins:** Button = GPIO 0 (BOOT-Button, Pull-up → LOW wenn gedrückt), LED = GPIO 2 (eingebaute LED)
-- **MAC-Adresse:** Muss einmalig manuell aus dem Seriellen Monitor in `main.c` eingetragen werden (`mac_geraet1[]` / `mac_geraet2[]`)
+- **GPIO-Pins:** Button = GPIO 0 (BOOT-Button, Pull-up → LOW wenn gedrückt), LED = GPIO 48 (onboard NeoPixel/WS2812, ESP32-S3)
+- **MAC-Adressen:** Von Hand in `main/mac_config.h` eintragen (nicht im Git, siehe `.gitignore`) – Vorlage: `main/mac_config.h.example`
 - **Verzögerungen:** Kein `delay()` – stattdessen `vTaskDelay(pdMS_TO_TICKS(ms))` (FreeRTOS)
 - **Logging:** `ESP_LOGI` / `ESP_LOGW` / `ESP_LOGE` statt `Serial.println`
 - **Kommentarsprache:** Deutsch – Kommentare und Log-Ausgaben bleiben auf Deutsch
