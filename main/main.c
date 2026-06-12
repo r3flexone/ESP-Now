@@ -10,8 +10,8 @@
  *
  *  Verkabelung (beide Geräte identisch):
  *  --------------------------------------
- *   Button  →  GPIO 0  (BOOT-Button, LOW wenn gedrückt)
- *   LED     →  GPIO 2  (eingebaute LED)
+ *   Button  →  GPIO 0   (BOOT-Button, LOW wenn gedrückt)
+ *   LED     →  GPIO 48  (onboard NeoPixel/WS2812, ESP32-S3-DevKitC-1)
  *
  *  Setup-Reihenfolge:
  *  ------------------
@@ -30,6 +30,7 @@
  * ============================================================
  */
 
+#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -40,15 +41,20 @@
 #include "esp_now.h"
 #include "esp_log.h"
 #include "driver/gpio.h"   // Komponente esp_driver_gpio (in IDF v6 umbenannt)
+#include "led_strip.h"     // NeoPixel (WS2812) ueber RMT-Treiber
 
 // ── ANPASSEN: MAC-Adressen beider Geräte eintragen ──────────
-// Beispiel: {0x24, 0x6F, 0x28, 0xAA, 0xBB, 0x01}
-static uint8_t mac_geraet1[] = {0xE0, 0x72, 0xA1, 0xDB, 0x44, 0x68};  // eingetragen
-static uint8_t mac_geraet2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x02};  // noch eintragen!
+// Einfach in der Schreibweise aus dem seriellen Monitor eintragen
+// Beispiel: "24:6F:28:AA:BB:01"
+static const char *mac_geraet1_str = "A0:F2:62:E2:D0:7C";  // eingetragen
+static const char *mac_geraet2_str = "E0:72:A1:DB:44:68";  // noch eintragen!
 // ────────────────────────────────────────────────────────────
 
+static uint8_t mac_geraet1[6];
+static uint8_t mac_geraet2[6];
+
 #define BUTTON_PIN  GPIO_NUM_0
-#define LED_PIN     GPIO_NUM_2
+#define LED_PIN     GPIO_NUM_48   // onboard NeoPixel (WS2812)
 
 // Tag für Lognachrichten – erscheint im Monitor als "[ESP-NOW] ..."
 static const char *TAG = "ESP-NOW";
@@ -60,6 +66,36 @@ typedef struct {
 
 // Wird in app_main gesetzt nachdem bekannt ist welches Gerät wir sind
 static uint8_t *ziel_adresse = NULL;
+
+// Aktueller LED-Zustand – wird bei jedem Empfang umgeschaltet
+static bool led_status = false;
+
+// Handle fuer den NeoPixel
+static led_strip_handle_t led_strip;
+
+
+// Schaltet den NeoPixel an (gedimmtes Weiss) oder aus
+static void led_set(bool an)
+{
+    if (an) {
+        led_strip_set_pixel(led_strip, 0, 16, 16, 16);
+        led_strip_refresh(led_strip);
+    } else {
+        led_strip_clear(led_strip);
+    }
+}
+
+
+// Wandelt "AA:BB:CC:DD:EE:FF" in ein 6-Byte-Array um
+static void parse_mac(const char *str, uint8_t *out)
+{
+    unsigned int bytes[6];
+    sscanf(str, "%x:%x:%x:%x:%x:%x",
+           &bytes[0], &bytes[1], &bytes[2], &bytes[3], &bytes[4], &bytes[5]);
+    for (int i = 0; i < 6; i++) {
+        out[i] = (uint8_t)bytes[i];
+    }
+}
 
 
 // ── Callback: aufgerufen NACHDEM wir gesendet haben ─────────
@@ -84,10 +120,13 @@ static void recv_callback(const esp_now_recv_info_t *info,
     nachricht_t *msg = (nachricht_t *)daten;
 
     if (msg->led_an) {
-        ESP_LOGI(TAG, "Nachricht empfangen -> LED an!");
-        gpio_set_level(LED_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(500));  // 500 ms leuchten
-        gpio_set_level(LED_PIN, 0);
+        led_status = !led_status;
+        led_set(led_status);
+        if (led_status) {
+            ESP_LOGI(TAG, "Nachricht empfangen -> LED an");
+        } else {
+            ESP_LOGI(TAG, "Nachricht empfangen -> LED aus");
+        }
     }
 }
 
@@ -118,6 +157,10 @@ static void wifi_init(void)
 void app_main(void)
 {
     wifi_init();
+
+    // MAC-Adressen aus den String-Konstanten oben in Byte-Arrays umwandeln
+    parse_mac(mac_geraet1_str, mac_geraet1);
+    parse_mac(mac_geraet2_str, mac_geraet2);
 
     // Eigene MAC-Adresse lesen und anzeigen
     uint8_t eigene_mac[6];
@@ -153,17 +196,32 @@ void app_main(void)
     peer.encrypt = false;
     ESP_ERROR_CHECK(esp_now_add_peer(&peer));
 
-    // GPIO konfigurieren – LED als Ausgang
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << LED_PIN),
-        .mode         = GPIO_MODE_OUTPUT,
+    // NeoPixel (WS2812) ueber RMT-Treiber initialisieren
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = LED_PIN,
+        .max_leds       = 1,
+        .led_model      = LED_MODEL_WS2812,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .flags = {
+            .invert_out = false,
+        },
     };
-    gpio_config(&io_conf);
+    led_strip_rmt_config_t rmt_config = {
+        .clk_src       = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000,  // 10 MHz
+        .flags = {
+            .with_dma = false,
+        },
+    };
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+    led_strip_clear(led_strip);
 
     // GPIO konfigurieren – Button als Eingang mit internem Pull-up
-    io_conf.pin_bit_mask = (1ULL << BUTTON_PIN);
-    io_conf.mode         = GPIO_MODE_INPUT;
-    io_conf.pull_up_en   = GPIO_PULLUP_ENABLE;
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << BUTTON_PIN),
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+    };
     gpio_config(&io_conf);
 
     ESP_LOGI(TAG, "Bereit! Button druecken zum Senden.");
@@ -176,10 +234,10 @@ void app_main(void)
             esp_now_send(ziel_adresse, (uint8_t *)&msg, sizeof(msg));
             ESP_LOGI(TAG, "Gesendet!");
 
-            // Eigene LED kurz blinken als Bestätigung
-            gpio_set_level(LED_PIN, 1);
+            // Eigene LED kurz blinken als Bestätigung, danach zurück zum aktuellen Zustand
+            led_set(true);
             vTaskDelay(pdMS_TO_TICKS(100));
-            gpio_set_level(LED_PIN, 0);
+            led_set(led_status);
 
             // Warten bis Button losgelassen wird
             while (gpio_get_level(BUTTON_PIN) == 0) {
