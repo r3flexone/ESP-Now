@@ -1,0 +1,13 @@
+# ESP-IDF Build-Artefakte – werden bei jedem Build neu erzeugt
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# VS Code Benutzereinstellungen (persoenlich: COM-Port, lokaler IDF-Pfad, ...)
+.vscode/
+
+# MAC-Adressen der eigenen Geraete – lokal, nicht oeffentlich teilen
+# (Vorlage/Format-Beispiel: main/mac_config.h.example)
+main/mac_config.h

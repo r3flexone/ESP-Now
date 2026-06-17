@@ -1,0 +1,18 @@
+// MAC-Adressen aller Geraete -- von Hand eintragen!
+//
+// Setup:
+//   1. Diese Datei nach mac_config.h kopieren (mac_config.h steht in
+//      .gitignore, damit die eigenen MAC-Adressen nicht in GitHub landen).
+//   2. Jedes Geraet einmal flashen und im seriellen Monitor die Zeile
+//      "Meine MAC: AA:BB:CC:DD:EE:FF" ablesen.
+//   3. MAC-Adressen unten eintragen (Reihenfolge = Geraet 1, 2, 3, ...)
+//      und MAC_ANZAHL anpassen.
+//   4. Alle Geraete neu flashen.
+#pragma once
+
+#define MAC_ANZAHL 2
+
+static const char *mac_liste[MAC_ANZAHL] = {
+    "AA:BB:CC:DD:EE:FF",  // Geraet 1
+    "11:22:33:44:55:66",  // Geraet 2
+};
